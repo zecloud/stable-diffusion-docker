@@ -13,8 +13,9 @@ from diffusers import (
     StableDiffusionInpaintPipeline,
     StableDiffusionUpscalePipeline,
     schedulers,
+    
 )
-
+from diffusers.pipelines.stable_diffusion.convert_from_ckpt import load_pipeline_from_original_stable_diffusion_ckpt
 
 def iso_date_time():
     return datetime.datetime.now().isoformat()
@@ -53,7 +54,10 @@ def stable_diffusion_pipeline(p):
     else:
         p.diffuser = StableDiffusionPipeline
         p.revision = "fp16" if p.half else "main"
-
+    
+    if p.model.endswith(".ckpt"):
+        p.diffuser = load_pipeline_from_original_stable_diffusion_ckpt(p.model,'v1-inference.yaml',prediction_type='epsilon')
+    
     models = argparse.Namespace(
         **{
             "depth2img": ["stabilityai/stable-diffusion-2-depth"],
@@ -78,9 +82,9 @@ def stable_diffusion_pipeline(p):
             p.diffuser = StableDiffusionInpaintPipeline
         p.mask = load_image(p.mask)
 
-    if p.token is None:
-        with open("token.txt") as f:
-            p.token = f.read().replace("\n", "")
+    # if p.token is None:
+    #     with open("token.txt") as f:
+    #         p.token = f.read().replace("\n", "")
 
     if p.seed == 0:
         p.seed = torch.random.seed()
@@ -130,7 +134,7 @@ def stable_diffusion_inference(p):
         for i, img in enumerate(result.images):
             idx = j * p.samples + i + 1
             out = f"{prefix}__steps_{p.steps}__scale_{p.scale:.2f}__seed_{p.seed}__n_{idx}.png"
-            img.save(os.path.join("output", out))
+            img.save(os.path.join("outputs", out))
 
     print("completed pipeline:", iso_date_time(), flush=True)
 
