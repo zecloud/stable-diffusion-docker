@@ -1,5 +1,49 @@
 # Changelog
 
+## [v1.34.0](https://github.com/fboulnois/stable-diffusion-docker/compare/v1.33.0...v1.34.0) - 2023-03-17
+
+### Added
+
+* Add test for custom model and vae tiling
+* Add vae tiling for high resolution images
+* Update diffusers, onnx, and safetensors
+
+## [v1.33.0](https://github.com/fboulnois/stable-diffusion-docker/compare/v1.32.0...v1.33.0) - 2023-02-25
+
+### Added
+
+* Update diffusers to 0.13.1
+
+### Fixed
+
+* Ensure booleans do not consume other args
+
+## [v1.32.0](https://github.com/fboulnois/stable-diffusion-docker/compare/v1.31.0...v1.32.0) - 2023-02-20
+
+### Added
+
+* Ensure onnx option is tested
+* Split onnx into separate option
+
+## [v1.31.0](https://github.com/fboulnois/stable-diffusion-docker/compare/v1.30.1...v1.31.0) - 2023-02-17
+
+### Added
+
+* Add test for instruct pix2pix
+* Add instruct pix2pix pipeline
+* Update transformers to 4.26.1
+* Update onnxruntime to 1.14.0
+
+### Changed
+
+* Add full-sized image for testing
+
+## [v1.30.1](https://github.com/fboulnois/stable-diffusion-docker/compare/v1.30.0...v1.30.1) - 2023-02-03
+
+### Fixed
+
+* Switch xformers to 0.0.16 stable
+
 ## [v1.30.0](https://github.com/fboulnois/stable-diffusion-docker/compare/v1.29.0...v1.30.0) - 2023-01-28
 
 ### Added

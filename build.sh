@@ -48,10 +48,10 @@ run() {
 
 tests() {
     BASE_URL="https://raw.githubusercontent.com/fboulnois/repository-assets/main/assets/stable-diffusion-docker"
-    TEST_IMAGE="An_impressionist_painting_of_a_parakeet_eating_spaghetti_in_the_desert_s1.png"
+    TEST_IMAGE="An_impressionist_painting_of_a_parakeet_eating_spaghetti_in_the_desert_full.png"
     curl -sL "${BASE_URL}/${TEST_IMAGE}" > "$PWD/input/${TEST_IMAGE}"
     run --skip --height 512 --width 640 "abstract art"
-    run --device cpu --image "${TEST_IMAGE}" --strength 0.6 "abstract art"
+    run --device cpu --onnx --image "${TEST_IMAGE}" --strength 0.6 "abstract art"
     run --model "stabilityai/stable-diffusion-2" \
         --skip --height 768 --width 768 "abstract art"
     run --model "stabilityai/stable-diffusion-2-1" \
@@ -66,6 +66,15 @@ tests() {
         --xformers-memory-efficient-attention \
         --negative-prompt "bad, ugly, deformed, malformed, mutated, bad anatomy" \
         --prompt "a toucan"
+    run --model "timbrooks/instruct-pix2pix" \
+        --scale 7.0 --image-scale 2.0 \
+        --image "${TEST_IMAGE}" --attention-slicing \
+        --xformers-memory-efficient-attention \
+        --negative-prompt "bad, ugly, deformed, malformed, mutated, bad anatomy" \
+        --prompt "replace the sky with bricks"
+    run --model "dreamlike-art/dreamlike-diffusion-1.0" \
+        --skip --vae-tiling --xformers-memory-efficient-attention \
+        --height 1024 --width 1024 "abstract art"
     run --model "runwayml/stable-diffusion-v1-5" \
         --samples 2 --iters 2 --seed 42 \
         --scheduler HeunDiscreteScheduler \

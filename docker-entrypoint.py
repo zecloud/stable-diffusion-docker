@@ -11,6 +11,7 @@ from diffusers import (
     StableDiffusionPipeline,
     StableDiffusionImg2ImgPipeline,
     StableDiffusionInpaintPipeline,
+    StableDiffusionInstructPix2PixPipeline,
     StableDiffusionUpscalePipeline,
     schedulers,
     
@@ -39,6 +40,7 @@ def remove_unused_args(p):
         "num_images_per_prompt": p.samples,
         "num_inference_steps": p.steps,
         "guidance_scale": p.scale,
+        "image_guidance_scale": p.image_scale,
         "strength": p.strength,
         "generator": p.generator,
     }
@@ -48,7 +50,7 @@ def remove_unused_args(p):
 def stable_diffusion_pipeline(p):
     p.dtype = torch.float16 if p.half else torch.float32
 
-    if p.device == "cpu":
+    if p.onnx:
         p.diffuser = OnnxStableDiffusionPipeline
         p.revision = "onnx"
     else:
@@ -61,14 +63,18 @@ def stable_diffusion_pipeline(p):
     models = argparse.Namespace(
         **{
             "depth2img": ["stabilityai/stable-diffusion-2-depth"],
+            "pix2pix": ["timbrooks/instruct-pix2pix"],
             "upscalers": ["stabilityai/stable-diffusion-x4-upscaler"],
         }
     )
+
     if p.image is not None:
         if p.revision == "onnx":
             p.diffuser = OnnxStableDiffusionImg2ImgPipeline
         elif p.model in models.depth2img:
             p.diffuser = StableDiffusionDepth2ImgPipeline
+        elif p.model in models.pix2pix:
+            p.diffuser = StableDiffusionInstructPix2PixPipeline
         elif p.model in models.upscalers:
             p.diffuser = StableDiffusionUpscalePipeline
         else:
@@ -119,6 +125,9 @@ def stable_diffusion_pipeline(p):
     if p.xformers_memory_efficient_attention:
         pipeline.enable_xformers_memory_efficient_attention()
 
+    if p.vae_tiling:
+        pipeline.vae.enable_tiling()
+
     p.pipeline = pipeline
 
     print("loaded models after:", iso_date_time(), flush=True)
@@ -143,10 +152,7 @@ def main():
     parser = argparse.ArgumentParser(description="Create images from a text prompt.")
     parser.add_argument(
         "--attention-slicing",
-        type=bool,
-        nargs="?",
-        const=True,
-        default=False,
+        action="store_true",
         help="Use less memory at the expense of inference speed",
     )
     parser.add_argument(
@@ -158,10 +164,7 @@ def main():
     )
     parser.add_argument(
         "--half",
-        type=bool,
-        nargs="?",
-        const=True,
-        default=False,
+        action="store_true",
         help="Use float16 (half-sized) tensors instead of float32",
     )
     parser.add_argument(
@@ -172,6 +175,12 @@ def main():
         type=str,
         nargs="?",
         help="The input image to use for image-to-image diffusion",
+    )
+    parser.add_argument(
+        "--image-scale",
+        type=float,
+        nargs="?",
+        help="How closely the image should follow the original image",
     )
     parser.add_argument(
         "--iters",
@@ -200,6 +209,11 @@ def main():
         help="The prompt to not render into an image",
     )
     parser.add_argument(
+        "--onnx",
+        action="store_true",
+        help="Use the onnx runtime for inference",
+    )
+    parser.add_argument(
         "--prompt", type=str, nargs="?", help="The prompt to render into an image"
     )
     parser.add_argument(
@@ -214,7 +228,7 @@ def main():
         type=float,
         nargs="?",
         default=7.5,
-        help="Classifier free guidance scale",
+        help="How closely the image should follow the prompt",
     )
     parser.add_argument(
         "--scheduler",
@@ -227,10 +241,7 @@ def main():
     )
     parser.add_argument(
         "--skip",
-        type=bool,
-        nargs="?",
-        const=True,
-        default=False,
+        action="store_true",
         help="Skip the safety checker",
     )
     parser.add_argument(
@@ -246,14 +257,16 @@ def main():
         "--token", type=str, nargs="?", help="Huggingface user access token"
     )
     parser.add_argument(
+        "--vae-tiling",
+        action="store_true",
+        help="Use less memory when generating ultra-high resolution images",
+    )
+    parser.add_argument(
         "--width", type=int, nargs="?", default=512, help="Image width in pixels"
     )
     parser.add_argument(
         "--xformers-memory-efficient-attention",
-        type=bool,
-        nargs="?",
-        const=True,
-        default=False,
+        action="store_true",
         help="Use less memory but require the xformers library",
     )
     parser.add_argument(

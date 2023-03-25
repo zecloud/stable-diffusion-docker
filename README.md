@@ -26,7 +26,7 @@ By default, the pipeline uses the full model and weights which requires a CUDA
 capable GPU with 8GB+ of VRAM. It should take a few seconds to create one image.
 On less powerful GPUs you may need to modify some of the options; see the
 [Examples](#examples) section for more details. If you lack a suitable GPU you
-can set the option `--device cpu` instead.
+can set the options `--device cpu` and `--onnx` instead.
 
 ### Huggingface token
 
@@ -60,6 +60,8 @@ To build:
 
 ### Text-to-Image (`txt2img`)
 
+Create an image from a text prompt.
+
 To run:
 
 ```sh
@@ -67,6 +69,8 @@ To run:
 ```
 
 ### Image-to-Image (`img2img`)
+
+Create an image from an existing image and a text prompt.
 
 First, copy an image to the `input` folder. Next, to run:
 
@@ -76,6 +80,8 @@ First, copy an image to the `input` folder. Next, to run:
 
 ### Depth-Guided Diffusion (`depth2img`)
 
+Modify an existing image with its depth map and a text prompt.
+
 First, copy an image to the `input` folder. Next, to run:
 
 ```sh
@@ -83,7 +89,20 @@ First, copy an image to the `input` folder. Next, to run:
   --image image.png 'A detailed description of the objects to change'
 ```
 
+### Instruct Pix2Pix (`pix2pix`)
+
+Modify an existing image with a text prompt.
+
+First, copy an image to the `input` folder. Next, to run:
+
+```sh
+./build.sh run --model 'timbrooks/instruct-pix2pix' \
+  --image image.png 'A detailed description of the objects to change'
+```
+
 ### Image Upscaling (`upscale4x`)
+
+Create a high resolution image from an existing image with a text prompt.
 
 First, copy an image to the `input` folder. Next, to run:
 
@@ -93,6 +112,8 @@ First, copy an image to the `input` folder. Next, to run:
 ```
 
 ### Diffusion Inpainting (`inpaint`)
+
+Modify specific areas of an existing image with an image mask and a text prompt.
 
 First, copy an image and an image mask to the `input` folder. White areas of the
 mask will be diffused and black areas will be kept untouched. Next, to run:
@@ -113,7 +134,7 @@ The following are the most common options:
 * `--width [WIDTH]`: image width in pixels (default 512, must be divisible by 64)
 * `--iters [ITERS]`: number of times to run pipeline (default 1)
 * `--samples [SAMPLES]`: number of images to create per run (default 1)
-* `--scale [SCALE]`: unconditional guidance scale (default 7.5)
+* `--scale [SCALE]`: how closely the image should follow the prompt (default 7.5)
 * `--scheduler [SCHEDULER]`: override the scheduler used to denoise the image
 (default `None`)
 * `--seed [SEED]`: RNG seed for repeatability (default is a random seed)
@@ -121,22 +142,27 @@ The following are the most common options:
 
 Other options:
 
-* `--attention-slicing`: use less memory at the expense of inference speed
-(default is no attention slicing)
+* `--attention-slicing`: use less memory but decrease inference speed (default
+is no attention slicing)
 * `--device [DEVICE]`: the cpu or cuda device to use to render images (default
 `cuda`)
 * `--half`: use float16 tensors instead of float32 (default `float32`)
 * `--image [IMAGE]`: the input image to use for image-to-image diffusion
 (default `None`)
+* `--image-scale [IMAGE_SCALE]`: how closely the image should follow the
+original image (default `None`)
 * `--mask [MASK]`: the input mask to use for diffusion inpainting (default
 `None`)
 * `--negative-prompt [NEGATIVE_PROMPT]`: the prompt to not render into an image
 (default `None`)
+* `--onnx`: use the onnx runtime for inference (default is off)
 * `--skip`: skip safety checker (default is the safety checker is on)
 * `--strength [STRENGTH]`: diffusion strength to apply to the input image
 (default 0.75)
 * `--token [TOKEN]`: specify a Huggingface user access token at the command line
 instead of reading it from a file (default is a file)
+* `--vae-tiling`: use less memory when generating ultra-high resolution images
+but massively decrease inference speed (default is no tiling)
 * `--xformers-memory-efficient-attention`: use less memory but require the
 xformers library (default is that xformers is not required)
 
