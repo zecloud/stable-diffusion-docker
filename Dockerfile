@@ -9,7 +9,9 @@ RUN export DEBIAN_FRONTEND=noninteractive \
     python${PYTHON_VERSION} \
     python${PYTHON_VERSION}-venv \
     python3-pip \
-    #ffmpeg \
+    ffmpeg \
+    libopencv-dev \
+    python3-opencv \
     #curl \
     && rm -rf /var/lib/apt/lists/*
 
@@ -19,11 +21,17 @@ RUN ln -s -f /usr/bin/python${PYTHON_VERSION} /usr/bin/python3 && \
 
 RUN pip install --upgrade pip
 
-RUN pip install torch==1.13.1+cu117 --extra-index-url https://download.pytorch.org/whl/cu117
+RUN pip install onnxruntime==1.14.1 safetensors==0.3.0 transformers==4.27.3 xformers==0.0.16 
 
-RUN pip install diffusers[torch]==0.12.1 onnxruntime==1.13.1 safetensors==0.2.8 transformers==4.26.0 xformers==0.0.16rc425 
+RUN pip install omegaconf cutlass triton opencv-python
 
-RUN pip install omegaconf cutlass triton
+RUN pip install  torch==2.0.0+cu117  torchvision=0.15.1+cu117 --extra-index-url https://download.pytorch.org/whl/cu117
+
+RUN git clone https://github.com/huggingface/diffusers.git
+
+WORKDIR /diffusers
+
+RUN pip install -e ".[torch]"
 
 ENV USE_TORCH=1
 
