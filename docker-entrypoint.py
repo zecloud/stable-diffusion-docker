@@ -2,6 +2,7 @@
 import argparse, datetime, inspect, os, warnings
 import numpy as np
 import torch
+import json
 from PIL import Image
 from diffusers import (
     OnnxStableDiffusionPipeline,
@@ -155,10 +156,17 @@ def stable_diffusion_pipeline(p):
 
     return p
 
+def read_multi_prompt(prompt):
+    if prompt is None:
+        return None
+    with open(prompt, "r") as f:
+        data=f.read()
+        return json.loads(data)
+    
 
 def stable_diffusion_inference(p):
     if p.multi_prompt is not None:
-        multiprompts=p.multi_prompt.split("@")
+        multiprompts=read_multi_prompt(p.multi_prompt)
         p.prompt=multiprompts[0]
         p.iters=len(multiprompts)
     prefix = p.prompt.replace(" ", "_")[:170]
@@ -334,7 +342,7 @@ def main():
         "--multi-prompt",
         type=str,
         nargs="?",
-        help="A queue of prompts"
+        help="A file with a list of prompts"
     )
 
     parser.add_argument(
