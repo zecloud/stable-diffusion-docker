@@ -13,11 +13,12 @@ from diffusers import (
     StableDiffusionInpaintPipeline,
     StableDiffusionInstructPix2PixPipeline,
     StableDiffusionUpscalePipeline,
+    DiffusionPipeline,
     schedulers,
     
 )
 from diffusers.pipelines.stable_diffusion.convert_from_ckpt import load_pipeline_from_original_stable_diffusion_ckpt
-
+from diffusers.utils import export_to_video
 def iso_date_time():
     return datetime.datetime.now().isoformat()
 
@@ -43,6 +44,7 @@ def remove_unused_args(p):
         "image_guidance_scale": p.image_scale,
         "strength": p.strength,
         "generator": p.generator,
+        "num_frames":p.num_frames
     }
     return {p: args[p] for p in params if p in args}
 
@@ -65,8 +67,12 @@ def stable_diffusion_pipeline(p):
             "depth2img": ["stabilityai/stable-diffusion-2-depth"],
             "pix2pix": ["timbrooks/instruct-pix2pix"],
             "upscalers": ["stabilityai/stable-diffusion-x4-upscaler"],
+            "text2video":["damo-vilab/text-to-video-ms-1.7b"]
         }
     )
+
+    if p.model in models.text2video:
+        p.diffuser =DiffusionPipeline
 
     if p.image is not None:
         if p.revision == "onnx":
@@ -137,13 +143,26 @@ def stable_diffusion_pipeline(p):
 
 def stable_diffusion_inference(p):
     prefix = p.prompt.replace(" ", "_")[:170]
+    if p.multi_prompt is not None:
+        multiprompts=p.multi_prompt.split("@")
+        p.iters=len(multiprompts)
     for j in range(p.iters):
+        p.prompt=multiprompts[j]
         result = p.pipeline(**remove_unused_args(p))
-
+        if(p.model=="damo-vilab/text-to-video-ms-1.7b"):
+            video_frames = result.frames
+            export_to_video(video_frames,p.output_path)
         for i, img in enumerate(result.images):
             idx = j * p.samples + i + 1
-            out = f"{prefix}__steps_{p.steps}__scale_{p.scale:.2f}__seed_{p.seed}__n_{idx}.png"
-            img.save(os.path.join("outputs", out))
+            if(p.output_path is None):
+                out = f"{prefix}__steps_{p.steps}__scale_{p.scale:.2f}__seed_{p.seed}__n_{idx}.png"
+                img.save(os.path.join("outputs", out))
+            else:
+                out=p.output_path
+                if(p.samples>1):
+                    out=p.output_path.replace(".png","-"+str(j)+".png") 
+                img.save(out)
+                
 
     print("completed pipeline:", iso_date_time(), flush=True)
 
@@ -269,6 +288,24 @@ def main():
         action="store_true",
         help="Use less memory but require the xformers library",
     )
+    parser.add_argument(
+        "--output-path",
+        action="store_true",
+        help="Save the result in the output_path"
+    )
+    parser.add_argument(
+        "--num_frames",
+        type=int,
+        action="store_true",
+        help="Number of frames for video"
+    )
+    parser.add_argument(
+        "--multi_prompt",
+        type=str,
+        nargs="?",
+        help="A queue of prompts"
+    )
+
     parser.add_argument(
         "prompt0",
         metavar="PROMPT",
