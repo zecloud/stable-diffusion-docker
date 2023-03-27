@@ -17,7 +17,7 @@ from diffusers import (
     schedulers,
     
 )
-from diffusers.pipelines.stable_diffusion.convert_from_ckpt import load_pipeline_from_original_stable_diffusion_ckpt
+from diffusers.pipelines.stable_diffusion.convert_from_ckpt import download_from_original_stable_diffusion_ckpt
 from diffusers.utils import export_to_video
 def iso_date_time():
     return datetime.datetime.now().isoformat()
@@ -44,13 +44,13 @@ def remove_unused_args(p):
         "image_guidance_scale": p.image_scale,
         "strength": p.strength,
         "generator": p.generator,
-        "num_frames":p.num_frames
+        "num_frames":p.num_frames,
+        "variant":p.variant,
     }
     return {p: args[p] for p in params if p in args}
 
 
 def stable_diffusion_pipeline(p):
-    p.dtype = torch.float16 if p.half else torch.float32
 
     if p.onnx:
         p.diffuser = OnnxStableDiffusionPipeline
@@ -60,7 +60,7 @@ def stable_diffusion_pipeline(p):
         p.revision = "fp16" if p.half else "main"
     
     if p.model.endswith(".ckpt"):
-        p.diffuser = load_pipeline_from_original_stable_diffusion_ckpt(p.model,'v1-inference.yaml',prediction_type='epsilon')
+        p.diffuser = download_from_original_stable_diffusion_ckpt(p.model,'v1-inference.yaml',prediction_type='epsilon')
     
     models = argparse.Namespace(
         **{
@@ -73,6 +73,12 @@ def stable_diffusion_pipeline(p):
 
     if p.model in models.text2video:
         p.diffuser =DiffusionPipeline
+        if p.half:
+            p.revision = "main"
+            #p.torch_dtype=torch.float16 
+            p.variant="fp16"
+    #else:
+    p.dtype = torch.float16 if p.half else torch.float32
 
     if p.image is not None:
         if p.revision == "onnx":
@@ -133,6 +139,15 @@ def stable_diffusion_pipeline(p):
 
     if p.vae_tiling:
         pipeline.vae.enable_tiling()
+    
+    if p.enable_model_cpu_offload:
+        pipeline.enable_model_cpu_offload()
+
+    if p.enable_vae_slicing:
+        pipeline.vae.enable_slicing()
+    
+
+
 
     p.pipeline = pipeline
 
@@ -142,26 +157,30 @@ def stable_diffusion_pipeline(p):
 
 
 def stable_diffusion_inference(p):
-    prefix = p.prompt.replace(" ", "_")[:170]
     if p.multi_prompt is not None:
         multiprompts=p.multi_prompt.split("@")
+        p.prompt=multiprompts[0]
         p.iters=len(multiprompts)
+    prefix = p.prompt.replace(" ", "_")[:170]
+
     for j in range(p.iters):
-        p.prompt=multiprompts[j]
+        if p.multi_prompt is not None:
+            p.prompt=multiprompts[j]
         result = p.pipeline(**remove_unused_args(p))
         if(p.model=="damo-vilab/text-to-video-ms-1.7b"):
             video_frames = result.frames
-            export_to_video(video_frames,p.output_path)
-        for i, img in enumerate(result.images):
-            idx = j * p.samples + i + 1
-            if(p.output_path is None):
-                out = f"{prefix}__steps_{p.steps}__scale_{p.scale:.2f}__seed_{p.seed}__n_{idx}.png"
-                img.save(os.path.join("outputs", out))
-            else:
-                out=p.output_path
-                if(p.samples>1):
-                    out=p.output_path.replace(".png","-"+str(j)+".png") 
-                img.save(out)
+            export_to_video(video_frames,output_video_path=p.output_path)
+        else:
+            for i, img in enumerate(result.images):
+                idx = j * p.samples + i + 1
+                if(p.output_path is None):
+                    out = f"{prefix}__steps_{p.steps}__scale_{p.scale:.2f}__seed_{p.seed}__n_{idx}.png"
+                    img.save(os.path.join("outputs", out))
+                else:
+                    out=p.output_path
+                    if(p.samples>1):
+                        out=p.output_path.replace(".png","-"+str(j)+".png") 
+                    img.save(out)
                 
 
     print("completed pipeline:", iso_date_time(), flush=True)
@@ -289,18 +308,30 @@ def main():
         help="Use less memory but require the xformers library",
     )
     parser.add_argument(
-        "--output-path",
+        "--enable-model-cpu-offload",
         action="store_true",
+        help="enable cpu offload for attention slicing",
+    )
+    parser.add_argument(
+        "--enable-vae-slicing",
+        action="store_true",
+        help="enable vae slicing for attention slicing",
+    )
+    parser.add_argument(
+        "--output-path",
+        type=str,
+        nargs="?",
         help="Save the result in the output_path"
     )
     parser.add_argument(
-        "--num_frames",
+        "--num-frames",
         type=int,
-        action="store_true",
+        nargs="?", 
+        default=16,
         help="Number of frames for video"
     )
     parser.add_argument(
-        "--multi_prompt",
+        "--multi-prompt",
         type=str,
         nargs="?",
         help="A queue of prompts"
