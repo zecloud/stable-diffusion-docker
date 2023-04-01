@@ -18,7 +18,7 @@ from diffusers import (
     schedulers,
     
 )
-from diffusers.pipelines.stable_diffusion.convert_from_ckpt import download_from_original_stable_diffusion_ckpt
+#from diffusers.pipelines.stable_diffusion.convert_from_ckpt import download_from_original_stable_diffusion_ckpt
 from diffusers.utils import export_to_video
 def iso_date_time():
     return datetime.datetime.now().isoformat()
@@ -46,7 +46,7 @@ def remove_unused_args(p):
         "strength": p.strength,
         "generator": p.generator,
         "num_frames":p.num_frames,
-        "variant":p.variant,
+       #"variant":p.variant,
     }
     return {p: args[p] for p in params if p in args}
 
@@ -60,8 +60,8 @@ def stable_diffusion_pipeline(p):
         p.diffuser = StableDiffusionPipeline
         p.revision = "fp16" if p.half else "main"
     
-    if p.model.endswith(".ckpt"):
-        p.diffuser = download_from_original_stable_diffusion_ckpt(p.model,'v1-inference.yaml',prediction_type='epsilon')
+    # if p.model.endswith(".ckpt"):
+    #     p.diffuser = download_from_original_stable_diffusion_ckpt(p.model,'v1-inference.yaml',prediction_type='epsilon')
     
     models = argparse.Namespace(
         **{
@@ -76,11 +76,10 @@ def stable_diffusion_pipeline(p):
         p.diffuser =DiffusionPipeline
         if p.half:
             p.revision = "main"
-            #p.torch_dtype=torch.float16 
-            p.variant="fp16"
+            p.torch_dtype=torch.float16 
     #else:
     p.dtype = torch.float16 if p.half else torch.float32
-
+    #p.variant="fp16" if p.half else "main"
     if p.image is not None:
         if p.revision == "onnx":
             p.diffuser = OnnxStableDiffusionImg2ImgPipeline
@@ -123,7 +122,12 @@ def stable_diffusion_pipeline(p):
             torch_dtype=p.dtype,
             revision=p.revision,
             use_auth_token=p.token,
-        ).to(p.device)
+        )
+        if(p.model not in models.text2video and p.textualinversion is not None):
+            listembed=os.listdir(p.textualinversion)
+            for weighttextinversion in listembed:
+                pipeline.load_textual_inversion(p.textualinversion,weight_name=weighttextinversion)
+        pipeline.to(p.device)
 
     if p.scheduler is not None:
         scheduler = getattr(schedulers, p.scheduler)
@@ -167,25 +171,32 @@ def read_multi_prompt(prompt):
 def stable_diffusion_inference(p):
     if p.multi_prompt is not None:
         multiprompts=read_multi_prompt(p.multi_prompt)
-        p.prompt=multiprompts[0]
+        p.prompt=multiprompts[0]["prompt"]
         p.iters=len(multiprompts)
     prefix = p.prompt.replace(" ", "_")[:170]
 
     for j in range(p.iters):
         if p.multi_prompt is not None:
-            p.prompt=multiprompts[j]
+            p.prompt=multiprompts[j]["prompt"]
         result = p.pipeline(**remove_unused_args(p))
         if(p.model=="damo-vilab/text-to-video-ms-1.7b"):
             video_frames = result.frames
-            export_to_video(video_frames,output_video_path=p.output_path)
+            if p.multi_prompt is not None:
+                out=multiprompts[j]["output_path"]
+            else:
+                out=p.output_path
+            export_to_video(video_frames,output_video_path=out)
         else:
             for i, img in enumerate(result.images):
                 idx = j * p.samples + i + 1
-                if(p.output_path is None):
+                if(p.output_path is None and p.multi_prompt is None):
                     out = f"{prefix}__steps_{p.steps}__scale_{p.scale:.2f}__seed_{p.seed}__n_{idx}.png"
                     img.save(os.path.join("outputs", out))
                 else:
-                    out=p.output_path
+                    if p.multi_prompt is not None:
+                        out=multiprompts[j]["output_path"]
+                    else:
+                        out=p.output_path
                     if(p.samples>1):
                         out=p.output_path.replace(".png","-"+str(j)+".png") 
                     img.save(out)
@@ -344,7 +355,13 @@ def main():
         nargs="?",
         help="A file with a list of prompts"
     )
-
+    parser.add_argument(
+        "--textualinversion",
+        type=str,
+        nargs="?",
+        help="A path with textualinversion folder to embed"
+    )
+    
     parser.add_argument(
         "prompt0",
         metavar="PROMPT",
@@ -352,6 +369,7 @@ def main():
         nargs="?",
         help="The prompt to render into an image",
     )
+    
 
     args = parser.parse_args()
 
