@@ -21,11 +21,13 @@ RUN ln -s -f /usr/bin/python${PYTHON_VERSION} /usr/bin/python3 && \
 
 RUN pip install --upgrade pip
 
-RUN pip install onnxruntime==1.14.1 safetensors==0.3.0 transformers==4.27.3 xformers==0.0.16 
+RUN pip install onnxruntime==1.14.1 safetensors==0.3.0 transformers==4.27.3
+
+RUN pip install -U --pre  xformers
 
 RUN pip install omegaconf cutlass triton opencv-python
 
-RUN pip install  torch==2.0.0+cu117  torchvision=0.15.1+cu117 --extra-index-url https://download.pytorch.org/whl/cu117
+RUN pip install torch==2.0.0+cu117 torchvision==0.15.1+cu117 --extra-index-url https://download.pytorch.org/whl/cu117
 
 RUN git clone https://github.com/huggingface/diffusers.git
 

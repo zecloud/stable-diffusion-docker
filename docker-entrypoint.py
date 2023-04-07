@@ -46,7 +46,6 @@ def remove_unused_args(p):
         "strength": p.strength,
         "generator": p.generator,
         "num_frames":p.num_frames,
-       #"variant":p.variant,
     }
     return {p: args[p] for p in params if p in args}
 
@@ -79,7 +78,8 @@ def stable_diffusion_pipeline(p):
             p.torch_dtype=torch.float16 
     #else:
     p.dtype = torch.float16 if p.half else torch.float32
-    #p.variant="fp16" if p.half else "main"
+    p.variant="fp16" if(p.fp16) else None
+
     if p.image is not None:
         if p.revision == "onnx":
             p.diffuser = OnnxStableDiffusionImg2ImgPipeline
@@ -122,6 +122,7 @@ def stable_diffusion_pipeline(p):
             torch_dtype=p.dtype,
             revision=p.revision,
             use_auth_token=p.token,
+            variant=p.variant,
         )
         if(p.model not in models.text2video and p.textualinversion is not None):
             listembed=os.listdir(p.textualinversion)
@@ -178,6 +179,8 @@ def stable_diffusion_inference(p):
     for j in range(p.iters):
         if p.multi_prompt is not None:
             p.prompt=multiprompts[j]["prompt"]
+            if("num_frames" in multiprompts[j]):
+                p.num_frames=multiprompts[j]["num_frames"]
         result = p.pipeline(**remove_unused_args(p))
         if(p.model=="damo-vilab/text-to-video-ms-1.7b"):
             video_frames = result.frames
@@ -335,6 +338,11 @@ def main():
         "--enable-vae-slicing",
         action="store_true",
         help="enable vae slicing for attention slicing",
+    )
+    parser.add_argument(
+        "--fp16",
+        action="store_true",
+        help="enable variant fp16",
     )
     parser.add_argument(
         "--output-path",
