@@ -19,7 +19,7 @@ from diffusers import (
     
 )
 #from diffusers.pipelines.stable_diffusion.convert_from_ckpt import download_from_original_stable_diffusion_ckpt
-from diffusers.utils import export_to_video
+from diffusers.utils import export_to_video,pt_to_pil
 def iso_date_time():
     return datetime.datetime.now().isoformat()
 
@@ -67,16 +67,18 @@ def stable_diffusion_pipeline(p):
             "depth2img": ["stabilityai/stable-diffusion-2-depth"],
             "pix2pix": ["timbrooks/instruct-pix2pix"],
             "upscalers": ["stabilityai/stable-diffusion-x4-upscaler"],
-            "text2video":["damo-vilab/text-to-video-ms-1.7b"]
+            "text2video":["damo-vilab/text-to-video-ms-1.7b"],
+            "deepfloyd":["DeepFloyd/IF-I-XL-v1.0"]
         }
     )
 
-    if p.model in models.text2video:
+    if p.model in models.text2video or p.model in models.deepfloyd:
         p.diffuser =DiffusionPipeline
         if p.half:
             p.revision = "main"
             p.torch_dtype=torch.float16 
     #else:
+
     p.dtype = torch.float16 if p.half else torch.float32
     p.variant="fp16" if(p.fp16) else None
 
@@ -124,10 +126,23 @@ def stable_diffusion_pipeline(p):
             use_auth_token=p.token,
             variant=p.variant,
         )
+        if(p.model in models.deepfloyd):
+            stage_2_pipeline= p.diffuser.from_pretrained(
+            "DeepFloyd/IF-II-L-v1.0",
+            text_encoder=None,
+            torch_dtype=p.dtype,
+            revision=p.revision,
+            use_auth_token=p.token,
+            variant=p.variant,
+            )
+            p.stage_2_pipeline=stage_2_pipeline
         if(p.model not in models.text2video and p.textualinversion is not None):
             listembed=os.listdir(p.textualinversion)
             for weighttextinversion in listembed:
                 pipeline.load_textual_inversion(p.textualinversion,weight_name=weighttextinversion)
+        if(p.model not in models.text2video and p.lora is not None):
+            p.unet.load_attn_procs(p.lora)
+        
         pipeline.to(p.device)
 
     if p.scheduler is not None:
@@ -181,7 +196,18 @@ def stable_diffusion_inference(p):
             p.prompt=multiprompts[j]["prompt"]
             if("num_frames" in multiprompts[j]):
                 p.num_frames=multiprompts[j]["num_frames"]
-        result = p.pipeline(**remove_unused_args(p))
+        if(p.model=="DeepFloyd/IF-I-XL-v1.0"):
+            prompt_embeds, negative_embeds = p.pipeline.encode_prompt(p.prompt)
+            result = p.pipeline(prompt_embeds, negative_prompt_embeds=negative_embeds, generator=p.generator, output_type="pt").images
+            result = p.stage_2_pipeline(image=result,
+                prompt_embeds=prompt_embeds,
+                negative_prompt_embeds=negative_embeds,
+                generator=p.generator,
+                output_type="pt",
+            ).images    
+
+        else:
+            result = p.pipeline(**remove_unused_args(p))
         if(p.model=="damo-vilab/text-to-video-ms-1.7b"):
             video_frames = result.frames
             if p.multi_prompt is not None:
@@ -189,6 +215,14 @@ def stable_diffusion_inference(p):
             else:
                 out=p.output_path
             export_to_video(video_frames,output_video_path=out)
+        elif(p.model=="DeepFloyd/IF-I-XL-v1.0"):
+            if p.multi_prompt is not None:
+                out=multiprompts[j]["output_path"]
+            else:
+                out=p.output_path
+            if(p.samples>1):
+                out=p.output_path.replace(".png","-"+str(j)+".png") 
+            pt_to_pil(result)[0].save(out)
         else:
             for i, img in enumerate(result.images):
                 idx = j * p.samples + i + 1
@@ -369,7 +403,12 @@ def main():
         nargs="?",
         help="A path with textualinversion folder to embed"
     )
-    
+    parser.add_argument(
+        "--lora",
+        type=str,
+        nargs="?",
+        help="A path with lora folder to embed"
+    )
     parser.add_argument(
         "prompt0",
         metavar="PROMPT",
