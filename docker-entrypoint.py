@@ -133,23 +133,12 @@ def stable_diffusion_pipeline(p):
             use_auth_token=p.token,
             variant=p.variant,
         )
-        # if(p.model in models.deepfloyd):
-        #     stage_2_pipeline= p.diffuser.from_pretrained(
-        #     "DeepFloyd/IF-II-L-v1.0",
-        #     text_encoder=None,
-        #     torch_dtype=p.dtype,
-        #     revision=p.revision,
-        #     use_auth_token=p.token,
-        #     variant=p.variant,
-        #     )
-        #     p.stage_2_pipeline=stage_2_pipeline
         if(p.model not in models.text2video and p.textualinversion is not None):
             listembed=os.listdir(p.textualinversion)
             for weighttextinversion in listembed:
                 pipeline.load_textual_inversion(p.textualinversion,weight_name=weighttextinversion)
         if(p.model not in models.text2video and p.lora is not None):
             p.unet.load_attn_procs(p.lora)
-        #if(p.model not in models.deepfloyd):
         pipeline.to(p.device)
 
     if p.scheduler is not None:
@@ -244,7 +233,7 @@ def deepfloydPipe(p):
         #device_map="auto"
     )
     p.pipeline.to(p.device)
-    result=p.pipeline(p.prompt, generator=p.generator, image=result).images  
+    result=p.pipeline(p.prompt, generator=p.generator, image=result)
     return result
 
 def stable_diffusion_inference(p):
@@ -270,15 +259,6 @@ def stable_diffusion_inference(p):
             else:
                 out=p.output_path
             export_to_video(video_frames,output_video_path=out)
-        elif(p.model=="DeepFloyd/IF-I-XL-v1.0"):
-            if p.multi_prompt is not None:
-                out=multiprompts[j]["output_path"]
-            else:
-                out=p.output_path
-            if(p.samples>1):
-                out=p.output_path.replace(".png","-"+str(j)+".png") 
-            #pt_to_pil(result)[0].save(out)
-            result[0].save(out)
         else:
             for i, img in enumerate(result.images):
                 idx = j * p.samples + i + 1
