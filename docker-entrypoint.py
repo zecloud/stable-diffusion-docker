@@ -16,10 +16,14 @@ from diffusers import (
     StableDiffusionUpscalePipeline,
     DiffusionPipeline,
     schedulers,
-    
+    IFPipeline, IFSuperResolutionPipeline
 )
 #from diffusers.pipelines.stable_diffusion.convert_from_ckpt import download_from_original_stable_diffusion_ckpt
 from diffusers.utils import export_to_video,pt_to_pil
+from huggingface_hub import login
+from transformers import T5EncoderModel
+import gc
+
 def iso_date_time():
     return datetime.datetime.now().isoformat()
 
@@ -51,7 +55,9 @@ def remove_unused_args(p):
 
 
 def stable_diffusion_pipeline(p):
+    if p.token is not None:
 
+        login(p.token) 
     if p.onnx:
         p.diffuser = OnnxStableDiffusionPipeline
         p.revision = "onnx"
@@ -114,7 +120,8 @@ def stable_diffusion_pipeline(p):
         p.generator = np.random.RandomState(p.seed)
     else:
         p.generator = torch.Generator(device=p.device).manual_seed(p.seed)
-
+    if(p.model in models.deepfloyd):
+        return p
     print("load pipeline start:", iso_date_time(), flush=True)
 
     with warnings.catch_warnings():
@@ -126,23 +133,23 @@ def stable_diffusion_pipeline(p):
             use_auth_token=p.token,
             variant=p.variant,
         )
-        if(p.model in models.deepfloyd):
-            stage_2_pipeline= p.diffuser.from_pretrained(
-            "DeepFloyd/IF-II-L-v1.0",
-            text_encoder=None,
-            torch_dtype=p.dtype,
-            revision=p.revision,
-            use_auth_token=p.token,
-            variant=p.variant,
-            )
-            p.stage_2_pipeline=stage_2_pipeline
+        # if(p.model in models.deepfloyd):
+        #     stage_2_pipeline= p.diffuser.from_pretrained(
+        #     "DeepFloyd/IF-II-L-v1.0",
+        #     text_encoder=None,
+        #     torch_dtype=p.dtype,
+        #     revision=p.revision,
+        #     use_auth_token=p.token,
+        #     variant=p.variant,
+        #     )
+        #     p.stage_2_pipeline=stage_2_pipeline
         if(p.model not in models.text2video and p.textualinversion is not None):
             listembed=os.listdir(p.textualinversion)
             for weighttextinversion in listembed:
                 pipeline.load_textual_inversion(p.textualinversion,weight_name=weighttextinversion)
         if(p.model not in models.text2video and p.lora is not None):
             p.unet.load_attn_procs(p.lora)
-        
+        #if(p.model not in models.deepfloyd):
         pipeline.to(p.device)
 
     if p.scheduler is not None:
@@ -182,7 +189,63 @@ def read_multi_prompt(prompt):
     with open(prompt, "r") as f:
         data=f.read()
         return json.loads(data)
-    
+
+def flush():   
+    gc.collect()
+    torch.cuda.empty_cache()
+
+def deepfloydPipe(p):
+    text_encoder = T5EncoderModel.from_pretrained(
+                 p.model, subfolder="text_encoder", torch_dtype=p.dtype,variant=p.variant,#device_map="auto",load_in_8bit=True, variant="8bit"
+             )
+    p.pipeline= DiffusionPipeline.from_pretrained(
+        p.model,
+        text_encoder=text_encoder,  # pass the previously instantiated 8bit text encoder
+        unet=None,
+        torch_dtype=p.dtype,
+        variant=p.variant,
+        #device_map="auto",
+    )
+    p.pipeline.to(p.device)
+    prompt_embeds, negative_embeds = p.pipeline.encode_prompt(p.prompt)
+    del text_encoder
+    del p.pipeline
+    flush()
+    p.pipeline = p.diffuser.from_pretrained(
+        p.model,
+        text_encoder=None,
+        torch_dtype=p.dtype,
+        variant=p.variant,
+        #device_map="auto"
+        )
+    p.pipeline.to(p.device)
+    result = p.pipeline(prompt_embeds=prompt_embeds, negative_prompt_embeds=negative_embeds, generator=p.generator, output_type="pt").images
+    del p.pipeline
+    flush()
+    p.pipeline = p.diffuser.from_pretrained(
+        "DeepFloyd/IF-II-L-v1.0",
+        text_encoder=None,
+        torch_dtype=p.dtype,
+        variant=p.variant,
+        #device_map="auto"
+        )
+    p.pipeline.to(p.device)
+    result = p.pipeline(image=result,
+        prompt_embeds=prompt_embeds,
+        negative_prompt_embeds=negative_embeds,
+        generator=p.generator,
+        output_type="pt",
+    ).images    
+    del p.pipeline
+    flush()
+    p.pipeline = DiffusionPipeline.from_pretrained(
+        "stabilityai/stable-diffusion-x4-upscaler", 
+        torch_dtype=torch.float16, 
+        #device_map="auto"
+    )
+    p.pipeline.to(p.device)
+    result=p.pipeline(p.prompt, generator=p.generator, image=result).images  
+    return result
 
 def stable_diffusion_inference(p):
     if p.multi_prompt is not None:
@@ -197,15 +260,7 @@ def stable_diffusion_inference(p):
             if("num_frames" in multiprompts[j]):
                 p.num_frames=multiprompts[j]["num_frames"]
         if(p.model=="DeepFloyd/IF-I-XL-v1.0"):
-            prompt_embeds, negative_embeds = p.pipeline.encode_prompt(p.prompt)
-            result = p.pipeline(prompt_embeds, negative_prompt_embeds=negative_embeds, generator=p.generator, output_type="pt").images
-            result = p.stage_2_pipeline(image=result,
-                prompt_embeds=prompt_embeds,
-                negative_prompt_embeds=negative_embeds,
-                generator=p.generator,
-                output_type="pt",
-            ).images    
-
+            result=deepfloydPipe(p)               
         else:
             result = p.pipeline(**remove_unused_args(p))
         if(p.model=="damo-vilab/text-to-video-ms-1.7b"):
@@ -222,7 +277,8 @@ def stable_diffusion_inference(p):
                 out=p.output_path
             if(p.samples>1):
                 out=p.output_path.replace(".png","-"+str(j)+".png") 
-            pt_to_pil(result)[0].save(out)
+            #pt_to_pil(result)[0].save(out)
+            result[0].save(out)
         else:
             for i, img in enumerate(result.images):
                 idx = j * p.samples + i + 1
@@ -422,7 +478,7 @@ def main():
 
     if args.prompt0 is not None:
         args.prompt = args.prompt0
-
+    
     pipeline = stable_diffusion_pipeline(args)
     stable_diffusion_inference(pipeline)
 
